@@ -12,30 +12,45 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Bongkar File Vendor Boot
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         mkdir -p workspace
         
-        # 1. Download APK Magisk dan Ekstrak Magiskboot buat alat bongkar
+        # 1. Download dan Ekstrak Magiskboot
         curl -L -o magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk"
         unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d workspace/
         mv workspace/libmagiskboot.so workspace/magiskboot
         chmod +x workspace/magiskboot
         rm -f magisk.apk
         
-        # 2. Copy vendor_boot asli dari repo ke workspace
-        cp vendor_boot.img workspace/ 2>/dev/null || cp vendor_boot* workspace/vendor_boot.img 2>/dev/null
-        
         cd workspace
+        
+        # 2. Ambil file vendor_boot.img dari Release lu sendiri
+        echo "=== Mengunduh file dari Release ==="
+        gh release download --pattern "vendor_boot*" || echo "Gagal download otomatis via pattern"
+        
+        # Cari file apa saja yang berhasil ke-download dan rename ke nama standar jika perlu
+        FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | head -n 1)
+        if [ ! -z "$FILE_DOWNLOAD" ] && [ "$FILE_DOWNLOAD" != "vendor_boot.img" ]; then
+          mv "$FILE_DOWNLOAD" vendor_boot.img
+        fi
+        
+        # Validasi apakah file vendor_boot.img beneran udah ada di workspace
         if [ ! -f "vendor_boot.img" ]; then
-          echo "ERROR: File vendor_boot.img asli belum lu upload ke repo utama!"
-          ls -la ..
+          echo "--------------------------------------------------------"
+          echo "ERROR: File vendor_boot tidak ditemukan di Release lu!"
+          echo "Pastiin lu udah upload filenya ke halaman RELEASE."
+          echo "Isi folder saat ini:"
+          ls -la
+          echo "--------------------------------------------------------"
           exit 1
         fi
         
         # 3. PROSES BONGKAR TOTAL
         ./magiskboot unpack vendor_boot.img
         
-        # 4. Ekstrak ramdisk internalnya biar kelihatan folder dan isinya (fstab, rc, dll)
+        # 4. Ekstrak ramdisk internal (fstab, init.rc, dll)
         if [ -f "ramdisk.cpio" ]; then
           mkdir -p isi_ramdisk
           cd isi_ramdisk
@@ -43,7 +58,7 @@ jobs:
           cd ..
         fi
         
-        echo "=== Pembongkaran Selesai, Ini Isi Hasil Ekstrak ==="
+        echo "=== HASIL BONGKAR AMAN ==="
         ls -la
         ls -la isi_ramdisk/ 2>/dev/null || true
 
@@ -55,4 +70,3 @@ jobs:
           workspace/
           !workspace/magiskboot
           !workspace/vendor_boot.img
-          
