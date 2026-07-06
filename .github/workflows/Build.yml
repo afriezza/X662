@@ -1,4 +1,4 @@
-name: Bongkar Vendor Boot buat Device Tree
+name: Bongkar Boot atau Vendor Boot buat Device Tree
 
 on:
   workflow_dispatch:
@@ -16,89 +16,99 @@ jobs:
       with:
         python-version: '3.x'
 
-    - name: Create Unpack Script & Bongkar
+    - name: Create Smart Unpack Script & Bongkar
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         mkdir -p hasil_output
         
-        # 1. Tulis ulang script unpack_bootimg.py minimalis langsung dari inline text
+        # 1. Tulis ulang script Python yang bisa mendeteksi otomatis jenis file
         cat << 'EOF' > unpack_bootimg.py
         import os
         import struct
         import sys
 
-        def unpack_bootimg(boot_img, out_dir):
+        def unpack_any_boot(boot_img, out_dir):
             with open(boot_img, 'rb') as f:
-                header = f.read(16384) # Baca area header vendor_boot
-                if b'VNDRBOOT' not in header:
-                    print("ERROR: Ini bukan format vendor_boot.img yang valid!")
+                header = f.read(16384)
+                
+                # Deteksi Magic Bytes
+                if b'ANDROID!' in header:
+                    print("=== DETEKSI: Ini adalah BOOT.IMG biasa (Header v1/v2/v4) ===")
+                    page_size = struct.unpack_into('<I', header, 36)[0]
+                    kernel_size = struct.unpack_into('<I', header, 12)[0]
+                    ramdisk_size = struct.unpack_into('<I', header, 20)[0]
+                    dtb_size = 0
+                    
+                    # Offset standar bootimg
+                    offset = page_size
+                    if kernel_size > 0:
+                        offset += ((kernel_size + page_size - 1) // page_size) * page_size
+                    
+                    if ramdisk_size > 0:
+                        f.seek(offset)
+                        ramdisk_data = f.read(ramdisk_size)
+                        with open(os.path.join(out_dir, 'ramdisk.cpio'), 'wb') as out:
+                            out.write(ramdisk_data)
+                        print("Sukses mengekstrak ramdisk.cpio dari boot.img")
+                        
+                elif b'VNDRBOOT' in header:
+                    print("=== DETEKSI: Ini adalah VENDOR_BOOT.IMG valid ===")
+                    header_version = struct.unpack_into('<I', header, 12)[0]
+                    page_size = struct.unpack_into('<I', header, 16)[0]
+                    vendor_ramdisk_size = struct.unpack_into('<I', header, 28)[0]
+                    dtb_size = struct.unpack_into('<I', header, 36)[0]
+                    
+                    offset = page_size
+                    if vendor_ramdisk_size > 0:
+                        f.seek(offset)
+                        ramdisk_data = f.read(vendor_ramdisk_size)
+                        with open(os.path.join(out_dir, 'vendor_ramdisk.cpio'), 'wb') as out:
+                            out.write(ramdisk_data)
+                        print("Sukses mengekstrak vendor_ramdisk.cpio dari vendor_boot.img")
+                        offset += ((vendor_ramdisk_size + page_size - 1) // page_size) * page_size
+                        
+                    if dtb_size > 0:
+                        f.seek(offset)
+                        dtb_data = f.read(dtb_size)
+                        with open(os.path.join(out_dir, 'dtb'), 'wb') as out:
+                            out.write(dtb_data)
+                        print("Sukses mengekstrak file dtb")
+                else:
+                    print("ERROR FATAL: File ini tidak dikenali sebagai format boot Android apa pun!")
+                    print(f"Header awal file: {header[:16]}")
                     sys.exit(1)
-                
-                # Parsing Header v3 / v4 (Umum di MTK Modern)
-                header_version = struct.unpack_into('<I', header, 12)[0]
-                page_size = struct.unpack_into('<I', header, 16)[0]
-                print(f"Vendor Boot Header Version: {header_version}")
-                
-                # Ambil ukuran vendor ramdisk & dtb
-                vendor_ramdisk_size = struct.unpack_into('<I', header, 28)[0]
-                dtb_size = struct.unpack_into('<I', header, 36)[0]
-                
-                # Hitung posisi offset di dalam file image
-                # Header memakan tempat 1 page
-                offset = page_size
-                
-                # Ekstrak Vendor Ramdisk
-                if vendor_ramdisk_size > 0:
-                    f.seek(offset)
-                    ramdisk_data = f.read(vendor_ramdisk_size)
-                    with open(os.path.join(out_dir, 'vendor_ramdisk.cpio'), 'wb') as out:
-                        out.write(ramdisk_data)
-                    print("Sukses mengekstrak vendor_ramdisk.cpio")
-                    offset += ((vendor_ramdisk_size + page_size - 1) // page_size) * page_size
-                
-                # Ekstrak DTB
-                if dtb_size > 0:
-                    f.seek(offset)
-                    dtb_data = f.read(dtb_size)
-                    with open(os.path.join(out_dir, 'dtb'), 'wb') as out:
-                        out.write(dtb_data)
-                    print("Sukses mengekstrak file dtb")
 
         if __name__ == '__main__':
-            if len(sys.argv) < 5:
-                print("Usage: python3 unpack_bootimg.py --boot_img <file> --out <dir>")
-                sys.exit(1)
-            unpack_bootimg(sys.argv[2], sys.argv[4])
+            unpack_any_boot(sys.argv[2], sys.argv[4])
         EOF
 
         chmod +x unpack_bootimg.py
 
-        # 2. Ambil file vendor_boot.img dari Release
+        # 2. Ambil file dari Release
         echo "=== Mengunduh file dari Release ==="
-        gh release download --pattern "vendor_boot*" || echo "Gagal download"
+        gh release download --pattern "vendor_boot*" || gh release download --pattern "boot*" || echo "Gagal download"
         
-        FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | grep -v "unpack_bootimg.py" | head -n 1)
-        if [ ! -z "$FILE_DOWNLOAD" ] && [ "$FILE_DOWNLOAD" != "vendor_boot.img" ]; then
-          mv "$FILE_DOWNLOAD" vendor_boot.img
-        fi
-        
-        if [ ! -f "vendor_boot.img" ]; then
-          echo "ERROR: File vendor_boot tidak ditemukan di Release!"
+        FILE_DOWNLOAD=$(ls vendor_boot* boot* 2>/dev/null | grep -v "unpack_bootimg.py" | head -n 1)
+        if [ ! -z "$FILE_DOWNLOAD" ]; then
+          mv "$FILE_DOWNLOAD" file_target.img
+        else
+          echo "ERROR: File boot/vendor_boot tidak ditemukan di Release!"
           exit 1
         fi
         
         # 3. PROSES BONGKAR
-        echo "=== Menjalankan Unpack Bootimg ==="
-        python3 unpack_bootimg.py --boot_img vendor_boot.img --out hasil_output
+        echo "=== Menjalankan Smart Unpack Bootimg ==="
+        python3 unpack_bootimg.py --boot_img file_target.img --out hasil_output
         
-        # 4. Ekstrak ramdisk yang keluar
+        # 4. Ekstrak ramdisk yang berhasil keluar
         cd hasil_output
-        if [ -f "vendor_ramdisk.cpio" ]; then
+        RAMDISK_FILE=$(ls *ramdisk.cpio 2>/dev/null | head -n 1)
+        if [ ! -z "$RAMDISK_FILE" ]; then
           mkdir -p isi_ramdisk
-          echo "=== Mengekstrak isi ramdisk ==="
+          echo "=== Mengekstrak isi ramdisk ($RAMDISK_FILE) ==="
           cd isi_ramdisk
-          cpio -i < ../vendor_ramdisk.cpio 2>/dev/null || true
+          cpio -i < ../$RAMDISK_FILE 2>/dev/null || true
           cd ..
         fi
         
