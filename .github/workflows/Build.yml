@@ -28,7 +28,7 @@ jobs:
         
         # 2. Ambil file vendor_boot.img dari Release
         echo "=== Mengunduh file dari Release ==="
-        gh release download --pattern "vendor_boot*" || echo "Gagal download otomatis via pattern"
+        gh release download --pattern "vendor_boot*" || echo "Gagal download"
         
         FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | head -n 1)
         if [ ! -z "$FILE_DOWNLOAD" ] && [ "$FILE_DOWNLOAD" != "vendor_boot.img" ]; then
@@ -40,32 +40,39 @@ jobs:
           exit 1
         fi
         
-        # 3. PROSES BONGKAR (Ditambah || true biar gak crash gara-gara exit code non-zero)
+        # 3. PROSES BONGKAR
         echo "=== Menjalankan Magiskboot Unpack ==="
         ./magiskboot unpack vendor_boot.img || true
         
         # 4. Ekstrak ramdisk internal (fstab, init.rc, dll)
-        # Kita cek apakah file ramdisk.cpio atau ramdisk.cpio.lz4 dll berhasil keluar
         RAMDISK_FILE=$(ls ramdisk.cpio* 2>/dev/null | head -n 1)
-        
         if [ ! -z "$RAMDISK_FILE" ]; then
           mkdir -p isi_ramdisk
           cd isi_ramdisk
-          echo "=== Mengekstrak isi ramdisk ($RAMDISK_FILE) ==="
           cpio -i < ../$RAMDISK_FILE 2>/dev/null || true
           cd ..
         fi
         
-        echo "=== CEK HASIL AKHIR WORKSPACE ==="
-        ls -la
-        echo "=== CEK ISI RAMDISK ==="
-        ls -la isi_ramdisk/ 2>/dev/null || echo "Folder isi_ramdisk kosong"
+        # 5. BERSIHKAN & PINDAHKAN HASIL (Biar gampang di-upload)
+        mkdir -p ../hasil_output
+        
+        # Pindahkan folder ramdisk yang udah diekstrak ke folder output
+        if [ -d "isi_ramdisk" ]; then
+          mv isi_ramdisk ../hasil_output/
+        fi
+        
+        # Ambil file-file header krusial (kernel, dtb, extra, header, dll) jika ada buat bahan dev tree
+        cp kernel* ../hasil_output/ 2>/dev/null || true
+        cp dtb* ../hasil_output/ 2>/dev/null || true
+        cp header* ../hasil_output/ 2>/dev/null || true
+        cp extra* ../hasil_output/ 2>/dev/null || true
+        
+        echo "=== ISI FOLDER OUTPUT YANG SIAP DI-DOWNLOAD ==="
+        ls -la ../hasil_output
+        ls -la ../hasil_output/isi_ramdisk/ 2>/dev/null || true
 
     - name: Upload Hasil Bongkar (Bahan Dev Tree)
       uses: actions/upload-artifact@v4
       with:
         name: Bahan-Device-Tree-X662
-        path: |
-          workspace/
-          !workspace/magiskboot
-          !workspace/vendor_boot.img
+        path: hasil_output/
