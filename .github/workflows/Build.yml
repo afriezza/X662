@@ -16,16 +16,64 @@ jobs:
       with:
         python-version: '3.x'
 
-    - name: Bongkar File Vendor Boot via AOSP Tool
+    - name: Create Unpack Script & Bongkar
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         mkdir -p hasil_output
         
-        # 1. Download script unpack_bootimg resmi dari Google AOSP
-        curl -L -o unpack_bootimg.py "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/unpack_bootimg.py?format=TEXT" | base64 --decode > unpack_bootimg.py
+        # 1. Tulis ulang script unpack_bootimg.py minimalis langsung dari inline text
+        cat << 'EOF' > unpack_bootimg.py
+        import os
+        import struct
+        import sys
+
+        def unpack_bootimg(boot_img, out_dir):
+            with open(boot_img, 'rb') as f:
+                header = f.read(16384) # Baca area header vendor_boot
+                if b'VNDRBOOT' not in header:
+                    print("ERROR: Ini bukan format vendor_boot.img yang valid!")
+                    sys.exit(1)
+                
+                # Parsing Header v3 / v4 (Umum di MTK Modern)
+                header_version = struct.unpack_into('<I', header, 12)[0]
+                page_size = struct.unpack_into('<I', header, 16)[0]
+                print(f"Vendor Boot Header Version: {header_version}")
+                
+                # Ambil ukuran vendor ramdisk & dtb
+                vendor_ramdisk_size = struct.unpack_into('<I', header, 28)[0]
+                dtb_size = struct.unpack_into('<I', header, 36)[0]
+                
+                # Hitung posisi offset di dalam file image
+                # Header memakan tempat 1 page
+                offset = page_size
+                
+                # Ekstrak Vendor Ramdisk
+                if vendor_ramdisk_size > 0:
+                    f.seek(offset)
+                    ramdisk_data = f.read(vendor_ramdisk_size)
+                    with open(os.path.join(out_dir, 'vendor_ramdisk.cpio'), 'wb') as out:
+                        out.write(ramdisk_data)
+                    print("Sukses mengekstrak vendor_ramdisk.cpio")
+                    offset += ((vendor_ramdisk_size + page_size - 1) // page_size) * page_size
+                
+                # Ekstrak DTB
+                if dtb_size > 0:
+                    f.seek(offset)
+                    dtb_data = f.read(dtb_size)
+                    with open(os.path.join(out_dir, 'dtb'), 'wb') as out:
+                        out.write(dtb_data)
+                    print("Sukses mengekstrak file dtb")
+
+        if __name__ == '__main__':
+            if len(sys.argv) < 5:
+                print("Usage: python3 unpack_bootimg.py --boot_img <file> --out <dir>")
+                sys.exit(1)
+            unpack_bootimg(sys.argv[2], sys.argv[4])
+        EOF
+
         chmod +x unpack_bootimg.py
-        
+
         # 2. Ambil file vendor_boot.img dari Release
         echo "=== Mengunduh file dari Release ==="
         gh release download --pattern "vendor_boot*" || echo "Gagal download"
@@ -40,18 +88,17 @@ jobs:
           exit 1
         fi
         
-        # 3. PROSES BONGKAR PAKE TOOL GOOGLE
-        echo "=== Menjalankan AOSP Unpack Bootimg ==="
+        # 3. PROSES BONGKAR
+        echo "=== Menjalankan Unpack Bootimg ==="
         python3 unpack_bootimg.py --boot_img vendor_boot.img --out hasil_output
         
-        # 4. Ekstrak ramdisk kustom yang berhasil dimuntahkan ke folder 'isi_ramdisk'
+        # 4. Ekstrak ramdisk yang keluar
         cd hasil_output
-        RAMDISK_FILE=$(ls vendor_ramdisk* ramdisk* 2>/dev/null | head -n 1)
-        if [ ! -z "$RAMDISK_FILE" ]; then
+        if [ -f "vendor_ramdisk.cpio" ]; then
           mkdir -p isi_ramdisk
-          echo "=== Mengekstrak isi ramdisk ($RAMDISK_FILE) ==="
+          echo "=== Mengekstrak isi ramdisk ==="
           cd isi_ramdisk
-          cpio -i < ../$RAMDISK_FILE 2>/dev/null || true
+          cpio -i < ../vendor_ramdisk.cpio 2>/dev/null || true
           cd ..
         fi
         
