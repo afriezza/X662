@@ -9,7 +9,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install Tools
       run: |
@@ -39,7 +39,7 @@ jobs:
         ../tools/magiskboot repack vendor_boot_x662.img new_vendor_boot.img
 
     - name: Upload Hasil Jadi
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: OrangeFox-X662
         path: workspace/new_vendor_boot.img
