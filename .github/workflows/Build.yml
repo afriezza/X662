@@ -26,41 +26,40 @@ jobs:
         
         cd workspace
         
-        # 2. Ambil file vendor_boot.img dari Release lu sendiri
+        # 2. Ambil file vendor_boot.img dari Release
         echo "=== Mengunduh file dari Release ==="
         gh release download --pattern "vendor_boot*" || echo "Gagal download otomatis via pattern"
         
-        # Cari file apa saja yang berhasil ke-download dan rename ke nama standar jika perlu
         FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | head -n 1)
         if [ ! -z "$FILE_DOWNLOAD" ] && [ "$FILE_DOWNLOAD" != "vendor_boot.img" ]; then
           mv "$FILE_DOWNLOAD" vendor_boot.img
         fi
         
-        # Validasi apakah file vendor_boot.img beneran udah ada di workspace
         if [ ! -f "vendor_boot.img" ]; then
-          echo "--------------------------------------------------------"
-          echo "ERROR: File vendor_boot tidak ditemukan di Release lu!"
-          echo "Pastiin lu udah upload filenya ke halaman RELEASE."
-          echo "Isi folder saat ini:"
-          ls -la
-          echo "--------------------------------------------------------"
+          echo "ERROR: File vendor_boot tidak ditemukan di Release!"
           exit 1
         fi
         
-        # 3. PROSES BONGKAR TOTAL
-        ./magiskboot unpack vendor_boot.img
+        # 3. PROSES BONGKAR (Ditambah || true biar gak crash gara-gara exit code non-zero)
+        echo "=== Menjalankan Magiskboot Unpack ==="
+        ./magiskboot unpack vendor_boot.img || true
         
         # 4. Ekstrak ramdisk internal (fstab, init.rc, dll)
-        if [ -f "ramdisk.cpio" ]; then
+        # Kita cek apakah file ramdisk.cpio atau ramdisk.cpio.lz4 dll berhasil keluar
+        RAMDISK_FILE=$(ls ramdisk.cpio* 2>/dev/null | head -n 1)
+        
+        if [ ! -z "$RAMDISK_FILE" ]; then
           mkdir -p isi_ramdisk
           cd isi_ramdisk
-          cpio -i < ../ramdisk.cpio 2>/dev/null || true
+          echo "=== Mengekstrak isi ramdisk ($RAMDISK_FILE) ==="
+          cpio -i < ../$RAMDISK_FILE 2>/dev/null || true
           cd ..
         fi
         
-        echo "=== HASIL BONGKAR AMAN ==="
+        echo "=== CEK HASIL AKHIR WORKSPACE ==="
         ls -la
-        ls -la isi_ramdisk/ 2>/dev/null || true
+        echo "=== CEK ISI RAMDISK ==="
+        ls -la isi_ramdisk/ 2>/dev/null || echo "Folder isi_ramdisk kosong"
 
     - name: Upload Hasil Bongkar (Bahan Dev Tree)
       uses: actions/upload-artifact@v4
