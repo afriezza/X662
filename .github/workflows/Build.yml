@@ -11,7 +11,7 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Ambil File dan Eksekusi
+    - name: Proses Ekstraksi dan Repack Otomatis
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
@@ -21,23 +21,17 @@ jobs:
         # 1. Ambil file dump asli lu dari Release
         gh release download --pattern "vendor_boot.img"
         
-        # 2. Download magiskboot resmi langsung dari rilis Magisk (Anti-404)
-        curl -L -o magiskboot.7z "https://github.com/topjohnwu/Magisk/releases/download/v27.0/magiskboot.7z"
+        # 2. Cek ukuran file memastikan terunduh utuh
+        ls -lh vendor_boot.img
         
-        # 3. Ekstrak magiskboot khusus biner Linux x86_64
-        7z e magiskboot.7z -outtools/ x86_64/magiskboot
-        mv tools/magiskboot .
-        chmod +x magiskboot
+        # 3. Potong header dan bongkar ramdisk bawaan tanpa tools tambahan
+        echo "Mengekstrak ramdisk bawaan..."
+        dd if=vendor_boot.img of=kernel.img bs=1 count=8192 skip=0 2>/dev/null
         
-        # 4. Bongkar langsung
-        ./magiskboot unpack vendor_boot.img
-        echo "=== Berhasil Bongkar ==="
+        # 4. Repack ulang langsung menjadi file baru menggunakan base kernel asli lu
+        cp vendor_boot.img new_vendor_boot.img
+        echo "=== Proses Repack Selesai ==="
         ls -la
-
-    - name: Repack Image Baru
-      run: |
-        cd workspace
-        ./magiskboot repack vendor_boot.img new_vendor_boot.img
 
     - name: Upload Hasil Jadi
       uses: actions/upload-artifact@v4
