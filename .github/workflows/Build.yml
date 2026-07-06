@@ -15,23 +15,18 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # Buat folder output langsung di root repository biar kebaca artifact
-        mkdir -p hasil_output
-        mkdir -p workspace
-        
-        # 1. Download dan Ekstrak Magiskboot
+        # 1. Download dan Ekstrak Magiskboot langsung di root repo
         curl -L -o magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk"
-        unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d workspace/
-        mv workspace/libmagiskboot.so workspace/magiskboot
-        chmod +x workspace/magiskboot
+        unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d .
+        mv libmagiskboot.so magiskboot
+        chmod +x magiskboot
         rm -f magisk.apk
         
-        # 2. Ambil file vendor_boot.img dari Release
-        cd workspace
+        # 2. Ambil file vendor_boot.img dari Release langsung ke root repo
         echo "=== Mengunduh file dari Release ==="
         gh release download --pattern "vendor_boot*" || echo "Gagal download"
         
-        FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | head -n 1)
+        FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | grep -v "magiskboot" | head -n 1)
         if [ ! -z "$FILE_DOWNLOAD" ] && [ "$FILE_DOWNLOAD" != "vendor_boot.img" ]; then
           mv "$FILE_DOWNLOAD" vendor_boot.img
         fi
@@ -41,36 +36,30 @@ jobs:
           exit 1
         fi
         
-        # 3. PROSES BONGKAR
+        # 3. PROSES BONGKAR LANGSUNG DI ROOT
         echo "=== Menjalankan Magiskboot Unpack ==="
         ./magiskboot unpack vendor_boot.img || true
         
-        # 4. Ekstrak ramdisk internal (fstab, init.rc, dll)
+        # 4. Cek dan Ekstrak ramdisk internal langsung ke folder 'isi_ramdisk'
         RAMDISK_FILE=$(ls ramdisk.cpio* 2>/dev/null | head -n 1)
         if [ ! -z "$RAMDISK_FILE" ]; then
           mkdir -p isi_ramdisk
+          echo "=== Mengekstrak isi ramdisk ($RAMDISK_FILE) ==="
           cd isi_ramdisk
           cpio -i < ../$RAMDISK_FILE 2>/dev/null || true
           cd ..
         fi
         
-        # 5. PINDAHKAN HASIL KE FOLDER OUTPUT UTAMA
-        if [ -d "isi_ramdisk" ]; then
-          mv isi_ramdisk ../hasil_output/
-        fi
+        # 5. BERSIH-BERSIH (Hapus file gajah & biner biar zip artifact-nya ringan)
+        rm -f magiskboot
+        rm -f vendor_boot.img
         
-        cp kernel* ../hasil_output/ 2>/dev/null || true
-        cp dtb* ../hasil_output/ 2>/dev/null || true
-        cp header* ../hasil_output/ 2>/dev/null || true
-        cp extra* ../hasil_output/ 2>/dev/null || true
-        
-        cd ..
-        echo "=== CEK PATH DAN FOLDER UTAMA ==="
-        pwd
-        ls -la hasil_output/
+        echo "=== CEK HASIL AKHIR REPO YANG AKAN DI-UPLOAD ==="
+        ls -la
+        ls -la isi_ramdisk/ 2>/dev/null || echo "Folder isi_ramdisk kosong"
 
     - name: Upload Hasil Bongkar (Bahan Dev Tree)
       uses: actions/upload-artifact@v4
       with:
         name: Bahan-Device-Tree-X662
-        path: hasil_output/
+        path: ./
