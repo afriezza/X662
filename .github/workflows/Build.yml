@@ -11,16 +11,6 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Clone Magiskboot Official
-      run: |
-        mkdir -p tools
-        cd tools
-        # Mengunduh biner magiskboot resmi via git clone agar aman dari blokir wget
-        git clone --depth=1 https://github.com/Magisk-Modules-Alt-Repo/magiskboot-binaries.git .
-        cp bin/linux/x86_64/magiskboot ../
-        cd ..
-        chmod +x magiskboot
-
     - name: Ambil File dan Patch Ramdisk
       env:
         GH_TOKEN: ${{ github.token }}
@@ -28,31 +18,37 @@ jobs:
         mkdir -p workspace
         cd workspace
         
-        # 1. Pindahkan biner magiskboot ke sini
-        mv ../magiskboot .
+        # 1. Download biner magiskboot resmi lewat GitHub API (Anti-404, Anti-Blokir)
+        gh release download v27.0 --repo topjohnwu/Magisk --pattern "magiskboot.7z"
         
-        # 2. DOWNLOAD DULUAN file dari Release lu biar gak bentrok urutan
+        # 2. Ekstrak magiskboot khusus biner Linux x86_64
+        7z e magiskboot.7z -outtools/ x86_64/magiskboot
+        mv outtools/magiskboot .
+        chmod +x magiskboot
+        rm -rf magiskboot.7z outtools/
+        
+        # 3. Download file milik lu dari Release repo lu sendiri
         gh release download --pattern "vendor_boot.img"
         gh release download --pattern "ramdisk.cpio"
         
-        # 3. Rename ramdisk custom OrangeFox lu sementara biar gak ditimpa pas unpack
+        # 4. Amankan nama ramdisk OrangeFox lu
         if [ -f "ramdisk.cpio" ]; then
           echo "Menyiapkan ramdisk custom OrangeFox..."
           mv ramdisk.cpio ramdisk_orangefox.cpio
         else
-          echo "ERROR: File ramdisk.cpio OrangeFox tidak ditemukan di Release!"
+          echo "ERROR: File ramdisk.cpio OrangeFox tidak ditemukan di Release lu!"
           exit 1
         fi
         
-        # 4. BONGKAR vendor_boot asli HP (Proses ini bakal ngehasilin file bernama 'ramdisk.cpio' asli bawaan)
+        # 5. Bongkar vendor_boot asli HP
         ./magiskboot unpack vendor_boot.img
         
-        # 5. EKSEKUSI PATCH (Ganti ramdisk asli bawaan HP dengan ramdisk OrangeFox)
-        echo "Menyuntikkan ramdisk OrangeFox ke dalam kernel..."
+        # 6. Suntikkan ramdisk OrangeFox
+        echo "Menyuntikkan ramdisk OrangeFox..."
         rm -f ramdisk.cpio
         mv ramdisk_orangefox.cpio ramdisk.cpio
         
-        # 6. BUNGKUS ULANG (Repack dengan struktur header yang valid)
+        # 7. Bungkus ulang jadi image baru
         ./magiskboot repack vendor_boot.img new_vendor_boot.img
         echo "=== Proses Repack Berhasil 100% ==="
         ls -la
