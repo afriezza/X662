@@ -1,60 +1,58 @@
-name: Patch Vendor Boot OrangeFox
+name: Bongkar Vendor Boot buat Device Tree
 
 on:
   workflow_dispatch:
 
 jobs:
-  patch_boot:
+  unpack_boot:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Ambil File dan Patch Ramdisk
-      env:
-        GH_TOKEN: ${{ github.token }}
+    - name: Bongkar File Vendor Boot
       run: |
         mkdir -p workspace
-        cd workspace
         
-        # 1. Download APK Magisk Resmi (Pasti Ada dan Isinya Lengkap)
+        # 1. Download APK Magisk dan Ekstrak Magiskboot buat alat bongkar
         curl -L -o magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk"
-        
-        # 2. Ekstrak biner magiskboot Linux x86_64 langsung dari dalam APK
-        unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d .
-        mv libmagiskboot.so magiskboot
-        chmod +x magiskboot
+        unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d workspace/
+        mv workspace/libmagiskboot.so workspace/magiskboot
+        chmod +x workspace/magiskboot
         rm -f magisk.apk
         
-        # 3. Download file milik lu dari Release repo lu sendiri
-        gh release download --pattern "vendor_boot.img"
-        gh release download --pattern "ramdisk.cpio"
+        # 2. Copy vendor_boot asli dari repo ke workspace
+        cp vendor_boot.img workspace/ 2>/dev/null || cp vendor_boot* workspace/vendor_boot.img 2>/dev/null
         
-        # 4. Amankan nama ramdisk OrangeFox lu
-        if [ -f "ramdisk.cpio" ]; then
-          echo "Menyiapkan ramdisk custom OrangeFox..."
-          mv ramdisk.cpio ramdisk_orangefox.cpio
-        else
-          echo "ERROR: File ramdisk.cpio OrangeFox tidak ditemukan di Release lu!"
+        cd workspace
+        if [ ! -f "vendor_boot.img" ]; then
+          echo "ERROR: File vendor_boot.img asli belum lu upload ke repo utama!"
+          ls -la ..
           exit 1
         fi
         
-        # 5. Bongkar vendor_boot asli HP
+        # 3. PROSES BONGKAR TOTAL
         ./magiskboot unpack vendor_boot.img
         
-        # 6. Suntikkan ramdisk OrangeFox
-        echo "Menyuntikkan ramdisk OrangeFox..."
-        rm -f ramdisk.cpio
-        mv ramdisk_orangefox.cpio ramdisk.cpio
+        # 4. Ekstrak ramdisk internalnya biar kelihatan folder dan isinya (fstab, rc, dll)
+        if [ -f "ramdisk.cpio" ]; then
+          mkdir -p isi_ramdisk
+          cd isi_ramdisk
+          cpio -i < ../ramdisk.cpio 2>/dev/null || true
+          cd ..
+        fi
         
-        # 7. Bungkus ulang jadi image baru
-        ./magiskboot repack vendor_boot.img new_vendor_boot.img
-        echo "=== Proses Repack Berhasil 100% ==="
+        echo "=== Pembongkaran Selesai, Ini Isi Hasil Ekstrak ==="
         ls -la
+        ls -la isi_ramdisk/ 2>/dev/null || true
 
-    - name: Upload Hasil Jadi
+    - name: Upload Hasil Bongkar (Bahan Dev Tree)
       uses: actions/upload-artifact@v4
       with:
-        name: OrangeFox-X662
-        path: workspace/new_vendor_boot.img
+        name: Bahan-Device-Tree-X662
+        path: |
+          workspace/
+          !workspace/magiskboot
+          !workspace/vendor_boot.img
+          
