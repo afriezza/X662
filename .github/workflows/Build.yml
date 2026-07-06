@@ -18,14 +18,14 @@ jobs:
         mkdir -p workspace
         cd workspace
         
-        # 1. Download biner magiskboot resmi lewat GitHub API (Anti-404, Anti-Blokir)
-        gh release download v27.0 --repo topjohnwu/Magisk --pattern "magiskboot.7z"
+        # 1. Download APK Magisk Resmi (Pasti Ada dan Isinya Lengkap)
+        curl -L -o magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk"
         
-        # 2. Ekstrak magiskboot khusus biner Linux x86_64
-        7z e magiskboot.7z -outtools/ x86_64/magiskboot
-        mv outtools/magiskboot .
+        # 2. Ekstrak biner magiskboot Linux x86_64 langsung dari dalam APK
+        unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d .
+        mv libmagiskboot.so magiskboot
         chmod +x magiskboot
-        rm -rf magiskboot.7z outtools/
+        rm -f magisk.apk
         
         # 3. Download file milik lu dari Release repo lu sendiri
         gh release download --pattern "vendor_boot.img"
