@@ -11,22 +11,26 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Bongkar File Vendor Boot
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Bongkar File Vendor Boot via AOSP Tool
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # 1. Download dan Ekstrak Magiskboot
-        curl -L -o magisk.apk "https://github.com/topjohnwu/Magisk/releases/download/v27.0/Magisk-v27.0.apk"
-        unzip -j magisk.apk "lib/x86_64/libmagiskboot.so" -d .
-        mv libmagiskboot.so magiskboot
-        chmod +x magiskboot
-        rm -f magisk.apk
+        mkdir -p hasil_output
         
-        # 2. Ambil file dari Release
+        # 1. Download script unpack_bootimg resmi dari Google AOSP
+        curl -L -o unpack_bootimg.py "https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/unpack_bootimg.py?format=TEXT" | base64 --decode > unpack_bootimg.py
+        chmod +x unpack_bootimg.py
+        
+        # 2. Ambil file vendor_boot.img dari Release
         echo "=== Mengunduh file dari Release ==="
         gh release download --pattern "vendor_boot*" || echo "Gagal download"
         
-        FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | grep -v "magiskboot" | head -n 1)
+        FILE_DOWNLOAD=$(ls vendor_boot* 2>/dev/null | grep -v "unpack_bootimg.py" | head -n 1)
         if [ ! -z "$FILE_DOWNLOAD" ] && [ "$FILE_DOWNLOAD" != "vendor_boot.img" ]; then
           mv "$FILE_DOWNLOAD" vendor_boot.img
         fi
@@ -36,12 +40,13 @@ jobs:
           exit 1
         fi
         
-        # 3. PROSES BONGKAR
-        echo "=== Menjalankan Magiskboot Unpack ==="
-        ./magiskboot unpack vendor_boot.img || echo "Magiskboot gagal membongkar file!"
+        # 3. PROSES BONGKAR PAKE TOOL GOOGLE
+        echo "=== Menjalankan AOSP Unpack Bootimg ==="
+        python3 unpack_bootimg.py --boot_img vendor_boot.img --out hasil_output
         
-        # 4. Cek dan Ekstrak ramdisk
-        RAMDISK_FILE=$(ls ramdisk.cpio* 2>/dev/null | head -n 1)
+        # 4. Ekstrak ramdisk kustom yang berhasil dimuntahkan ke folder 'isi_ramdisk'
+        cd hasil_output
+        RAMDISK_FILE=$(ls vendor_ramdisk* ramdisk* 2>/dev/null | head -n 1)
         if [ ! -z "$RAMDISK_FILE" ]; then
           mkdir -p isi_ramdisk
           echo "=== Mengekstrak isi ramdisk ($RAMDISK_FILE) ==="
@@ -50,11 +55,12 @@ jobs:
           cd ..
         fi
         
-        echo "=== CEK HASIL AKHIR REPO ==="
+        echo "=== CEK HASIL AKHIR BONGKARAN ==="
         ls -la
+        ls -la isi_ramdisk/ 2>/dev/null || echo "Ramdisk kosong"
 
-    - name: Upload Hasil Bongkar
+    - name: Upload Hasil Bongkar (Bahan Dev Tree)
       uses: actions/upload-artifact@v4
       with:
         name: Bahan-Device-Tree-X662
-        path: .
+        path: hasil_output/
