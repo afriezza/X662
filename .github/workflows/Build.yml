@@ -1,0 +1,45 @@
+name: Patch Vendor Boot OrangeFox
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch_boot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Install Tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y abootimg cpio p7zip-full wget
+        mkdir -p tools
+        cd tools
+        wget -qO magiskboot https://github.com/Magisk-Modules-Alt-Repo/magiskboot-binaries/raw/main/bin/linux/x86_64/magiskboot
+        chmod +x magiskboot
+        cd ..
+
+    - name: Download dan Unpack Vendor Boot
+      run: |
+        mkdir workspace
+        cd workspace
+        
+        # Mengunduh langsung file dari Mediafire lu
+        wget -O vendor_boot_x662.img "https://download941.mediafire.com/bs51m9c9yfyguKH32_HfWzEfvpb5_oWCGQOemV1Y203GFy4UYCwj12EBO7qD_gLJtm8jJuligq1lbSeNbDRn9tUm-60phFGhapCGIBbeBFaB6U4-4ODzoCFiaPGNT6Sp02hSiJoGALU1T0JbvHhxvVeXxifjpg9WX_BSIxVPSItl4A/w4f9h1pisbjtch2/vendor_boot.img"
+        
+        ../tools/magiskboot unpack vendor_boot_x662.img
+        echo "=== Berhasil Bongkar ==="
+        ls -la
+
+    - name: Repack Image Baru
+      run: |
+        cd workspace
+        ../tools/magiskboot repack vendor_boot_x662.img new_vendor_boot.img
+
+    - name: Upload Hasil Jadi
+      uses: actions/upload-artifact@v3
+      with:
+        name: OrangeFox-X662
+        path: workspace/new_vendor_boot.img
