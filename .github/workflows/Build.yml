@@ -17,7 +17,8 @@ jobs:
         sudo apt-get install -y abootimg cpio p7zip-full wget gh
         mkdir -p tools
         cd tools
-        wget -qO magiskboot https://github.com/Magisk-Modules-Alt-Repo/magiskboot-binaries/raw/main/bin/linux/x86_64/magiskboot
+        # Pakai link mirror resmi Magisk yang lebih aman
+        wget --no-check-certificate -qO magiskboot "https://github.com/topjohnwu/Magisk/releases/download/v27.0/magiskboot" || wget --no-check-certificate -qO magiskboot "https://github.com/Magisk-Modules-Alt-Repo/magiskboot-binaries/raw/main/bin/linux/x86_64/magiskboot"
         chmod +x magiskboot
         cd ..
 
@@ -25,11 +26,17 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        mkdir workspace
+        mkdir -p workspace
         cd workspace
         
-        # Mengunduh otomatis file sesuai nama asli dari Release lu
-        gh release download --pattern "vendor_boot.img"
+        # Ambil file dump asli lu
+        gh release download --pattern "vendor_boot.img" || echo "Gagal download dari release"
+        
+        # Cek apakah file benar-benar ada sebelum di-unpack
+        if [ ! -f "vendor_boot.img" ]; then
+          echo "ERROR: File vendor_boot.img tidak ditemukan di Release lu!"
+          exit 1
+        fi
         
         ../tools/magiskboot unpack vendor_boot.img
         echo "=== Berhasil Bongkar ==="
